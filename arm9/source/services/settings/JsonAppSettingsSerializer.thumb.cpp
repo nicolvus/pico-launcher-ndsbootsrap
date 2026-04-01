@@ -3,12 +3,13 @@
 #include "json/ArduinoJson.h"
 #include "AppSettings.h"
 #include "NdsLoaderKind.h"
+#include "LoaderBackend.h"
 #include "fat/File.h"
 #include "JsonAppSettingsSerializer.h"
 
 #pragma GCC optimize("Os")
 
-#define JSON_RESERVED_SIZE  2048
+#define JSON_RESERVED_SIZE  2560
 
 #define KEY_LANGUAGE                 "language"
 #define KEY_ROM_BROWSER_LAYOUT       "romBrowserLayout"
@@ -18,6 +19,9 @@
 #define KEY_FILE_ASSOCIATIONS        "fileAssociations"
 #define KEY_FILE_ASSOCIATIONS_APPLICATION_PATH  "appPath"
 #define KEY_NDS_LOADER               "ndsLoader"
+#define KEY_LOADER_BACKEND           "loaderBackend"
+#define KEY_LEGACY_LOADER_PATH       "legacyLoaderPath"
+#define KEY_BOOTSTRAP_LOADER_PATH    "bootstrapLoaderPath"
 
 static const char* serializeRomBrowserLayout(RomBrowserLayout romBrowserLayout)
 {
@@ -119,6 +123,32 @@ static bool tryParseNdsLoaderKind(const char* s, NdsLoaderKind& out)
     return true;
 }
 
+static const char* serializeLoaderBackend(LoaderBackend v)
+{
+    switch (v)
+    {
+        case LoaderBackend::Auto:      return "auto";
+        case LoaderBackend::Legacy:    return "legacy";
+        case LoaderBackend::Bootstrap: return "bootstrap";
+        default:                       return "auto";
+    }
+}
+
+static bool tryParseLoaderBackend(const char* s, LoaderBackend& out)
+{
+    if (!s)
+        return false;
+    if (!strcasecmp(s, "auto"))
+        out = LoaderBackend::Auto;
+    else if (!strcasecmp(s, "legacy"))
+        out = LoaderBackend::Legacy;
+    else if (!strcasecmp(s, "bootstrap"))
+        out = LoaderBackend::Bootstrap;
+    else
+        return false;
+    return true;
+}
+
 static bool tryParseFileAssociations(const JsonObjectConst& json, AppSettings* appSettings)
 {
     if (json.isNull())
@@ -158,6 +188,9 @@ static std::unique_ptr<u8[]> writeJson(const AppSettings* appSettings, u32& leng
     json[KEY_THEME] = appSettings->theme.GetString();
     json[KEY_LAST_USED_FILE_PATH] = appSettings->lastUsedFilePath.GetString();
     json[KEY_NDS_LOADER] = serializeNdsLoaderKind(appSettings->ndsLoaderKind);
+    json[KEY_LOADER_BACKEND] = serializeLoaderBackend(appSettings->loaderBackend);
+    json[KEY_LEGACY_LOADER_PATH] = appSettings->legacyLoaderPath.GetString();
+    json[KEY_BOOTSTRAP_LOADER_PATH] = appSettings->bootstrapLoaderPath.GetString();
     serializeFileAssociations(json, appSettings);
 
     u32 outputSize = measureJsonPretty(json);
@@ -200,6 +233,16 @@ static void readJson(AppSettings* appSettings, const JsonDocument& json)
     NdsLoaderKind ndsLoaderKind;
     if (tryParseNdsLoaderKind(json[KEY_NDS_LOADER].as<const char*>(), ndsLoaderKind))
         appSettings->ndsLoaderKind = ndsLoaderKind;
+
+    LoaderBackend loaderBackend;
+    if (tryParseLoaderBackend(json[KEY_LOADER_BACKEND].as<const char*>(), loaderBackend))
+        appSettings->loaderBackend = loaderBackend;
+
+    if (const char* p = json[KEY_LEGACY_LOADER_PATH].as<const char*>())
+        appSettings->legacyLoaderPath = p;
+
+    if (const char* p = json[KEY_BOOTSTRAP_LOADER_PATH].as<const char*>())
+        appSettings->bootstrapLoaderPath = p;
 
     RomBrowserLayout romBrowserLayout;
     if (tryParseRomBrowserLayout(json[KEY_ROM_BROWSER_LAYOUT].as<const char*>(),
