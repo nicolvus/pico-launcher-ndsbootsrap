@@ -16,6 +16,8 @@ namespace
 static constexpr const char* kNdsBootstrapExe = "/_nds/nds-bootstrap-release.nds";
 static constexpr const char* kBootstrapIniPath = "/_nds/nds-bootstrap.ini";
 static constexpr const char* kQuitPath = "/_pico/LAUNCHER.nds";
+static constexpr const char* kExternalLoaderSdPath = "sd:/_pico/load.bin";
+static constexpr const char* kExternalLoaderFatPath = "fat:/_pico/load.bin";
 static constexpr u32 kMaxLoaderBinBytes = 65536;
 
 alignas(32) static u8 sLoaderBin[kMaxLoaderBinBytes];
@@ -231,6 +233,28 @@ static bool IsLoaderValid(const u8* data, u32 size)
 
     return LoaderContainsDldiMagic(data, size);
 }
+
+static bool ReadLoaderFromFile(const char* path, u8* outData, u32 maxSize, u32& outSize)
+{
+    outSize = 0;
+    if (!path || !outData || maxSize == 0)
+        return false;
+
+    File file;
+    if (file.Open(path, FA_OPEN_EXISTING | FA_READ) != FR_OK)
+        return false;
+
+    u32 size = (u32)file.GetSize();
+    if (size > maxSize)
+        size = maxSize;
+
+    u32 read = 0;
+    if (file.Read(outData, size, read) != FR_OK || read != size)
+        return false;
+
+    outSize = size;
+    return true;
+}
 } // namespace
 
 bool TryLaunchNdsBootstrap(NdsBootstrapLogFn logFn)
@@ -296,42 +320,6 @@ bool TryLaunchNdsBootstrap(NdsBootstrapLogFn logFn)
         return false;
     }
 
-    // Load the loader binary directly from nds-bootstrap-release.nds (embedded loader)
-    EmitLog(logFn, "Extracting embedded loader from nds-bootstrap-release.nds");
-    File bootstrapFile;
-    if (bootstrapFile.Open(ndsBootstrapExePath, FA_OPEN_EXISTING | FA_READ) != FR_OK)
-    {
-        char msg[128];
-        snprintf(msg, sizeof(msg), "Cannot open nds-bootstrap: %.96s", ndsBootstrapExePath);
-        EmitLog(logFn, msg);
-        LOG_FATAL("Cannot open nds-bootstrap %s\n", ndsBootstrapExePath);
-        return false;
-    }
-
-    // Read the embedded loader from the beginning of nds-bootstrap-release.nds
-    // The loader is embedded in the first part of the NDS file
-    u32 loadSize = kMaxLoaderBinBytes;
-    u32 fileSize = (u32)bootstrapFile.GetSize();
-    if (fileSize < loadSize)
-        loadSize = fileSize;
-
-    u32 br = 0;
-    if (bootstrapFile.Read(sLoaderBin, loadSize, br) != FR_OK || br != loadSize)
-    {
-        EmitLog(logFn, "Failed reading embedded loader from nds-bootstrap");
-        LOG_FATAL("Failed to read embedded loader from %s\n", ndsBootstrapExePath);
-        return false;
-    }
-
-    {
-        char msg[64];
-        snprintf(msg, sizeof(msg), "Extracted loader bytes: %lu", (unsigned long)loadSize);
-        EmitLog(logFn, msg);
-    }
-    const bool loaderValid = IsLoaderValid(sLoaderBin, loadSize);
-    if (!loaderValid)
-        EmitLog(logFn, "Embedded loader did not pass validation");
-
     f_mkdir(ndsBootstrapDirPath);
     EmitLog(logFn, "Ensured /_nds/nds-bootstrap dir");
 
@@ -361,43 +349,93 @@ bool TryLaunchNdsBootstrap(NdsBootstrapLogFn logFn)
     StringUtil::Copy(sExePathBuf, ndsBootstrapExePath, sizeof(sExePathBuf));
     const char* argv[] = { sExePathBuf };
 
-    const bool canUseExternalLoader = loaderValid && IsExternalLoaderEnabled();
-    if (canUseExternalLoader)
-    {
-        EmitLog(logFn, "launch method: external");
-        EmitLog(logFn, "Calling runNdsWithExternalLoader...");
-        eRunNdsRetCode rc = runNdsWithExternalLoader(sLoaderBin, loadSize, finfoBootstrap.fclust, ndsBootstrapExePath,
-                                                     1, argv, isRunFromSd, dsModeSwitch, kBoostCpu, kBoostVram, -1);
-        if (rc == RUN_NDS_OK)
-        {
-            EmitLog(logFn, "runNdsWithExternalLoader OK");
-            return true;
-        }
+    char finalFailureReason[160];
+    StringUtil::Copy(finalFailureReason, "unknown", sizeof(finalFailureReason));
 
+    if (IsExternalLoaderEnabled())
+    {
+        const char* externalCandidates[] = { kExternalLoaderSdPath, kExternalLoaderFatPath };
+        for (u32 i = 0; i < 2; ++i)
         {
-            char msg[64];
-            snprintf(msg, sizeof(msg), "runNdsWithExternalLoader rc=%d", (int)rc);
-            EmitLog(logFn, msg);
+            const char* externalPath = externalCandidates[i];
+            {
+                char msg[160];
+                snprintf(msg, sizeof(msg), "Trying external loader: %s", externalPath);
+                EmitLog(logFn, msg);
+            }
+
+            u32 loadSize = 0;
+            const bool externalReadOk = ReadLoaderFromFile(externalPath, sLoaderBin, sizeof(sLoaderBin), loadSize);
+            const bool externalValid = externalReadOk && IsLoaderValid(sLoaderBin, loadSize);
+            EmitLog(logFn, externalValid ? "External loader validation: OK" : "External loader validation: FAIL");
+            if (!externalValid)
+                continue;
+
+            EmitLog(logFn, "Launch method selected: external");
+            eRunNdsRetCode rc = runNdsWithExternalLoader(sLoaderBin, loadSize, finfoBootstrap.fclust, ndsBootstrapExePath,
+                                                         1, argv, isRunFromSd, dsModeSwitch, kBoostCpu, kBoostVram,
+                                                         -1);
+            if (rc == RUN_NDS_OK)
+                return true;
+
+            {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "runNdsFile rc=%d", (int)rc);
+                EmitLog(logFn, msg);
+            }
+            StringUtil::Copy(finalFailureReason, "external loader launch failed", sizeof(finalFailureReason));
         }
-        EmitLog(logFn, "launch method: direct (external loader failed)");
     }
     else
     {
-        EmitLog(logFn, "launch method: direct (external loader disabled or invalid)");
+        StringUtil::Copy(finalFailureReason, "external loader disabled", sizeof(finalFailureReason));
     }
 
+    {
+        char msg[160];
+        snprintf(msg, sizeof(msg), "Trying embedded loader from: %s", ndsBootstrapExePath);
+        EmitLog(logFn, msg);
+    }
+
+    u32 embeddedSize = 0;
+    const bool embeddedReadOk = ReadLoaderFromFile(ndsBootstrapExePath, sLoaderBin, sizeof(sLoaderBin), embeddedSize);
+    const bool embeddedValid = embeddedReadOk && IsLoaderValid(sLoaderBin, embeddedSize);
+    EmitLog(logFn, embeddedValid ? "Embedded loader validation: OK" : "Embedded loader validation: FAIL");
+    if (embeddedValid)
+    {
+        EmitLog(logFn, "Launch method selected: embedded");
+        eRunNdsRetCode rc = runNdsWithExternalLoader(sLoaderBin, embeddedSize, finfoBootstrap.fclust, ndsBootstrapExePath,
+                                                     1, argv, isRunFromSd, dsModeSwitch, kBoostCpu, kBoostVram, -1);
+        if (rc == RUN_NDS_OK)
+            return true;
+
+        {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "runNdsFile rc=%d", (int)rc);
+            EmitLog(logFn, msg);
+        }
+        StringUtil::Copy(finalFailureReason, "embedded loader launch failed", sizeof(finalFailureReason));
+    }
+    else
+    {
+        StringUtil::Copy(finalFailureReason, "embedded loader invalid", sizeof(finalFailureReason));
+    }
+
+    EmitLog(logFn, "Launch method selected: direct");
     eRunNdsRetCode rcDirect = runNdsFile(ndsBootstrapExePath, 1, argv);
     {
-        char msg[96];
-        snprintf(msg, sizeof(msg), "runNdsFile rc=%d path=%.64s", (int)rcDirect, ndsBootstrapExePath);
+        char msg[64];
+        snprintf(msg, sizeof(msg), "runNdsFile rc=%d", (int)rcDirect);
         EmitLog(logFn, msg);
     }
     if (rcDirect != RUN_NDS_OK)
     {
+        char msg[220];
+        snprintf(msg, sizeof(msg), "Final launch failure reason: %s", finalFailureReason);
+        EmitLog(logFn, msg);
         LOG_FATAL("Direct launch failed for %s rc=%d\n", ndsBootstrapExePath, (int)rcDirect);
         return false;
     }
 
-    EmitLog(logFn, "launch method: direct");
     return true;
 }
