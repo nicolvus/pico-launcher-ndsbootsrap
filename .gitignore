@@ -2,8 +2,7 @@
 ############################
 Debug/
 Release/
-build/
-!build/
+build/*
 !build/launcher.nds
 out/
 

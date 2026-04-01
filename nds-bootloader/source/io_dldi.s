@@ -43,9 +43,9 @@ _dldi_start:
 #endif
 	.asciz	" Chishm"		@ Identifying Magic string (8 bytes with null terminator)
 	.byte	0x01			@ Version number
-	.byte	0x1a		@ 32KiB	@ Log [base-2] of the size of this driver in bytes.
+	.byte	0x1a			@ 32KiB	@ Log [base-2] of the size of this driver in bytes.
 	.byte	0x00			@ Sections to fix
-	.byte 	0x1a		@ 32KiB	@ Log [base-2] of the allocated space in bytes.
+	.byte	0x1a			@ 32KiB	@ Log [base-2] of the allocated space in bytes.
 	
 @---------------------------------------------------------------------------------
 @ Text identifier - can be anything up to 47 chars + terminating null -- 32 bytes
@@ -111,7 +111,7 @@ _io_dldi:
 	.word	_DLDI_clearStatus		@
 	.word	_DLDI_shutdown			@
 
-	_DLDI_startup:
+_DLDI_startup:
 _DLDI_isInserted:
 _DLDI_readSectors:
 _DLDI_writeSectors:
@@ -122,4 +122,3 @@ _DLDI_shutdown:
 
 
 #endif
-

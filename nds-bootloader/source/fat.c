@@ -62,14 +62,6 @@ License:
 // FAT constants
 #define CLUSTER_EOF_16	0xFFFF
 
-#define ATTRIB_ARCH	0x20
-#define ATTRIB_DIR	0x10
-#define ATTRIB_LFN	0x0F
-#define ATTRIB_VOL	0x08
-#define ATTRIB_HID	0x02
-#define ATTRIB_SYS	0x04
-#define ATTRIB_RO	0x01
-
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // Data Structures
 
