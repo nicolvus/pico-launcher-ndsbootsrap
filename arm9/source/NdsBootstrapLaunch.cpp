@@ -9,6 +9,7 @@
 #include "fat/ff.h"
 #include "fat/File.h"
 #include "nds_loader/nds_loader_arm9.h"
+#include <cstdlib>
 
 namespace
 {
@@ -184,6 +185,52 @@ static bool WriteBootstrapIni(NdsBootstrapLogFn logFn, const char* ndsPath, cons
     EmitLog(logFn, "nds-bootstrap.ini written");
     return true;
 }
+
+static bool IsExternalLoaderEnabled()
+{
+    // External loader must be opt-in; default is enabled, but can be disabled via environment.
+    const char* env = std::getenv("PICO_EXTERNAL_LOADER");
+    if (!env || env[0] == '\0')
+        return true;
+    if (strcasecmp(env, "1") == 0 || strcasecmp(env, "true") == 0 || strcasecmp(env, "yes") == 0
+        || strcasecmp(env, "on") == 0)
+        return true;
+    return false;
+}
+
+static bool LoaderContainsDldiMagic(const u8* data, u32 size)
+{
+    static constexpr u8 kMagic[] = { 0xEE, 0xA5, 0x8D, 0xBF, ' ', 'C', 'h', 'i', 's', 'h', 'm' };
+    if (!data || size < sizeof(kMagic))
+        return false;
+
+    for (u32 i = 0; i + sizeof(kMagic) <= size; ++i)
+    {
+        if (memcmp(data + i, kMagic, sizeof(kMagic)) == 0)
+            return true;
+    }
+    return false;
+}
+
+static bool IsLoaderValid(const u8* data, u32 size)
+{
+    if (!data || size < 0x4000 || size > kMaxLoaderBinBytes)
+        return false;
+
+    bool anyNonZero = false;
+    bool anyNonFF = false;
+    const u32 sample = (size > 1024) ? 1024 : size;
+    for (u32 i = 0; i < sample; ++i)
+    {
+        anyNonZero |= (data[i] != 0);
+        anyNonFF |= (data[i] != 0xFF);
+    }
+
+    if (!anyNonZero || !anyNonFF)
+        return false;
+
+    return LoaderContainsDldiMagic(data, size);
+}
 } // namespace
 
 bool TryLaunchNdsBootstrap(NdsBootstrapLogFn logFn)
@@ -281,6 +328,9 @@ bool TryLaunchNdsBootstrap(NdsBootstrapLogFn logFn)
         snprintf(msg, sizeof(msg), "Extracted loader bytes: %lu", (unsigned long)loadSize);
         EmitLog(logFn, msg);
     }
+    const bool loaderValid = IsLoaderValid(sLoaderBin, loadSize);
+    if (!loaderValid)
+        EmitLog(logFn, "Embedded loader did not pass validation");
 
     f_mkdir(ndsBootstrapDirPath);
     EmitLog(logFn, "Ensured /_nds/nds-bootstrap dir");
@@ -311,18 +361,43 @@ bool TryLaunchNdsBootstrap(NdsBootstrapLogFn logFn)
     StringUtil::Copy(sExePathBuf, ndsBootstrapExePath, sizeof(sExePathBuf));
     const char* argv[] = { sExePathBuf };
 
-    EmitLog(logFn, "Calling runNdsWithExternalLoader...");
-    eRunNdsRetCode rc = runNdsWithExternalLoader(sLoaderBin, loadSize, finfoBootstrap.fclust, ndsBootstrapExePath, 1,
-                                                 argv, isRunFromSd, dsModeSwitch, kBoostCpu, kBoostVram, -1);
-    if (rc != RUN_NDS_OK)
+    const bool canUseExternalLoader = loaderValid && IsExternalLoaderEnabled();
+    if (canUseExternalLoader)
     {
-        char msg[64];
-        snprintf(msg, sizeof(msg), "runNdsWithExternalLoader rc=%d", (int)rc);
+        EmitLog(logFn, "launch method: external");
+        EmitLog(logFn, "Calling runNdsWithExternalLoader...");
+        eRunNdsRetCode rc = runNdsWithExternalLoader(sLoaderBin, loadSize, finfoBootstrap.fclust, ndsBootstrapExePath,
+                                                     1, argv, isRunFromSd, dsModeSwitch, kBoostCpu, kBoostVram, -1);
+        if (rc == RUN_NDS_OK)
+        {
+            EmitLog(logFn, "runNdsWithExternalLoader OK");
+            return true;
+        }
+
+        {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "runNdsWithExternalLoader rc=%d", (int)rc);
+            EmitLog(logFn, msg);
+        }
+        EmitLog(logFn, "launch method: direct (external loader failed)");
+    }
+    else
+    {
+        EmitLog(logFn, "launch method: direct (external loader disabled or invalid)");
+    }
+
+    eRunNdsRetCode rcDirect = runNdsFile(ndsBootstrapExePath, 1, argv);
+    {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "runNdsFile rc=%d path=%.64s", (int)rcDirect, ndsBootstrapExePath);
         EmitLog(logFn, msg);
-        LOG_FATAL("runNdsWithExternalLoader failed: %d\n", (int)rc);
+    }
+    if (rcDirect != RUN_NDS_OK)
+    {
+        LOG_FATAL("Direct launch failed for %s rc=%d\n", ndsBootstrapExePath, (int)rcDirect);
         return false;
     }
 
-    EmitLog(logFn, "runNdsWithExternalLoader OK");
+    EmitLog(logFn, "launch method: direct");
     return true;
 }
