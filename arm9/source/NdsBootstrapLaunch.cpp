@@ -5,7 +5,6 @@
 #include "core/StringUtil.h"
 #include "NdsBootstrapLaunch.h"
 #include "NdsBootstrapLaunchParams.h"
-#include "loader_backend.h"
 #include "core/Environment.h"
 #include "fat/ff.h"
 #include "fat/File.h"
@@ -41,12 +40,10 @@ static const char* DetectVolumePrefix()
     FILINFO finfo;
     memset(&finfo, 0, sizeof(finfo));
 
-    // Check for either loader binary to identify the active boot drive.
-    if (f_stat("sd:/_pico/load.bin", &finfo) == FR_OK
-        || f_stat("sd:/_nds/nds-bootstrap.nds", &finfo) == FR_OK)
+    // Check for nds-bootstrap-release.nds to identify the active boot drive.
+    if (f_stat("sd:/_nds/nds-bootstrap-release.nds", &finfo) == FR_OK)
         return "sd:/";
-    if (f_stat("fat:/_pico/load.bin", &finfo) == FR_OK
-        || f_stat("fat:/_nds/nds-bootstrap.nds", &finfo) == FR_OK)
+    if (f_stat("fat:/_nds/nds-bootstrap-release.nds", &finfo) == FR_OK)
         return "fat:/";
     if (f_stat("sd:/", &finfo) == FR_OK)
         return "sd:/";
@@ -216,7 +213,6 @@ bool TryLaunchNdsBootstrap(NdsBootstrapLogFn logFn)
 
     char romPathAbs[288];
     char ndsBootstrapExePath[96];
-    char loadBinPath[96];
     char ndsBootstrapDirPath[96];
 
     BuildAbsolutePath(romPath, volumePrefix, romPathAbs, sizeof(romPathAbs));
@@ -228,13 +224,21 @@ bool TryLaunchNdsBootstrap(NdsBootstrapLogFn logFn)
         snprintf(msg, sizeof(msg), "ROM abs: %.180s", romPathAbs);
         EmitLog(logFn, msg);
     }
+
+    {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "Will launch: %.96s", ndsBootstrapExePath);
+        EmitLog(logFn, msg);
+    }
     EmitLog(logFn, "Checking nds-bootstrap-release.nds");
 
     FILINFO finfoBootstrap;
     memset(&finfoBootstrap, 0, sizeof(finfoBootstrap));
     if (f_stat(ndsBootstrapExePath, &finfoBootstrap) != FR_OK)
     {
-        EmitLog(logFn, "nds-bootstrap-release.nds missing");
+        char msg[128];
+        snprintf(msg, sizeof(msg), "nds-bootstrap-release.nds not found at: %.96s", ndsBootstrapExePath);
+        EmitLog(logFn, msg);
         LOG_FATAL("nds-bootstrap not found at %s (install DS-Homebrew release build).\n", ndsBootstrapExePath);
         return false;
     }
@@ -245,53 +249,36 @@ bool TryLaunchNdsBootstrap(NdsBootstrapLogFn logFn)
         return false;
     }
 
-    // Resolve the loader binary path using the configured backend policy.
-    EmitLog(logFn, "Resolving loader binary path");
-    bool loaderUsedFallback = false;
-    if (!ResolveLoaderBinPath(
-            GetNdsBootstrapLoaderBackend(),
-            GetNdsBootstrapLegacyLoaderPath(),
-            GetNdsBootstrapBootstrapLoaderPath(),
-            volumePrefix,
-            loadBinPath, sizeof(loadBinPath),
-            loaderUsedFallback,
-            logFn))
-    {
-        // ResolveLoaderBinPath already logged the error with both required paths.
-        return false;
-    }
-    if (loaderUsedFallback)
-        EmitLog(logFn, "Note: loader fallback path was used");
-
-    File loadBin;
-    if (loadBin.Open(loadBinPath, FA_OPEN_EXISTING | FA_READ) != FR_OK)
+    // Load the loader binary directly from nds-bootstrap-release.nds (embedded loader)
+    EmitLog(logFn, "Extracting embedded loader from nds-bootstrap-release.nds");
+    File bootstrapFile;
+    if (bootstrapFile.Open(ndsBootstrapExePath, FA_OPEN_EXISTING | FA_READ) != FR_OK)
     {
         char msg[128];
-        snprintf(msg, sizeof(msg), "Cannot open loader binary: %.96s", loadBinPath);
+        snprintf(msg, sizeof(msg), "Cannot open nds-bootstrap: %.96s", ndsBootstrapExePath);
         EmitLog(logFn, msg);
-        LOG_FATAL("Cannot open loader binary %s\n", loadBinPath);
+        LOG_FATAL("Cannot open nds-bootstrap %s\n", ndsBootstrapExePath);
         return false;
     }
-    u32 loadSize = (u32)loadBin.GetSize();
-    if (loadSize == 0 || loadSize > kMaxLoaderBinBytes)
-    {
-        char msg[80];
-        snprintf(msg, sizeof(msg), "Invalid loader binary size: %lu", (unsigned long)loadSize);
-        EmitLog(logFn, msg);
-        LOG_FATAL("Invalid loader binary size %u in %s\n", loadSize, loadBinPath);
-        return false;
-    }
+
+    // Read the embedded loader from the beginning of nds-bootstrap-release.nds
+    // The loader is embedded in the first part of the NDS file
+    u32 loadSize = kMaxLoaderBinBytes;
+    u32 fileSize = (u32)bootstrapFile.GetSize();
+    if (fileSize < loadSize)
+        loadSize = fileSize;
+
     u32 br = 0;
-    if (loadBin.Read(sLoaderBin, loadSize, br) != FR_OK || br != loadSize)
+    if (bootstrapFile.Read(sLoaderBin, loadSize, br) != FR_OK || br != loadSize)
     {
-        EmitLog(logFn, "Failed reading loader binary");
-        LOG_FATAL("Failed to read loader binary %s\n", loadBinPath);
+        EmitLog(logFn, "Failed reading embedded loader from nds-bootstrap");
+        LOG_FATAL("Failed to read embedded loader from %s\n", ndsBootstrapExePath);
         return false;
     }
 
     {
         char msg[64];
-        snprintf(msg, sizeof(msg), "Loader binary bytes: %lu", (unsigned long)loadSize);
+        snprintf(msg, sizeof(msg), "Extracted loader bytes: %lu", (unsigned long)loadSize);
         EmitLog(logFn, msg);
     }
 
