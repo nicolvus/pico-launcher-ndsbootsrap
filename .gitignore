@@ -3,6 +3,8 @@
 Debug/
 Release/
 build/
+!build/
+!build/launcher.nds
 out/
 
 # Compiled source #
@@ -44,8 +46,6 @@ out/
 ehthumbs.db
 Thumbs.db
 *.nds
-!build lista/
-!build lista/launcher.nds
 *.elf
 *.a
 .vscode/

@@ -50,6 +50,9 @@ endif
 
 ARM9DIR		:= arm9
 ARM7DIR		:= arm7
+BOOTLOADERDIR	:= nds-bootloader
+DATADIR		:= data
+LOADBIN		:= $(DATADIR)/load.bin
 
 # Build artfacts
 # --------------
@@ -59,7 +62,7 @@ ROM		:= $(NAME).nds
 # Targets
 # -------
 
-.PHONY: all clean arm9 arm7 dldipatch sdimage checklibtwl
+.PHONY: all clean arm9 arm7 dldipatch sdimage checklibtwl data nds-bootloader
 
 all: $(ROM)
 
@@ -67,12 +70,24 @@ clean:
 	@echo "  CLEAN"
 	$(V)$(MAKE) -f Makefile.arm9 clean --no-print-directory
 	$(V)$(MAKE) -f Makefile.arm7 clean --no-print-directory
+	$(V)$(MAKE) -C $(BOOTLOADERDIR) clean --no-print-directory
+	$(V)$(RM) $(DATADIR)
 	$(V)$(RM) $(ROM) build $(SDIMAGE)
 
-arm9: checklibtwl
+data:
+	$(V)mkdir -p $(DATADIR)
+
+nds-bootloader: data
+	@if [ ! -f "$(BOOTLOADERDIR)/Makefile" ]; then \
+		echo "Missing nds-bootloader/Makefile. Cannot generate data/load.bin."; \
+		false; \
+	fi
+	$(V)$(MAKE) -C $(BOOTLOADERDIR) LOADBIN=$(CURDIR)/$(LOADBIN) --no-print-directory
+
+arm9: checklibtwl nds-bootloader
 	$(V)+$(MAKE) -f Makefile.arm9 --no-print-directory
 
-arm7: checklibtwl
+arm7: checklibtwl nds-bootloader
 	$(V)+$(MAKE) -f Makefile.arm7 --no-print-directory
 
 checklibtwl:
@@ -99,8 +114,12 @@ $(ROM): arm9 arm7
 		-7 build/arm7.elf -9 build/arm9.elf \
 		-b $(GAME_ICON) "$(GAME_FULL_TITLE)" \
 		$(NDSTOOL_ARGS)
+	$(V)mkdir -p build
+	$(V)cp -f $@ build/launcher.nds
 
-sdimage:
+sdimage: nds-bootloader
+	$(V)mkdir -p $(SDROOT)/_pico
+	$(V)cp -f $(LOADBIN) $(SDROOT)/_pico/load.bin
 	@echo "  MKFATIMG $(SDIMAGE) $(SDROOT)"
 	$(V)$(BLOCKSDS)/tools/mkfatimg/mkfatimg -t $(SDROOT) $(SDIMAGE)
 

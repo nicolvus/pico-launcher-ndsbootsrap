@@ -1,11 +1,9 @@
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 #---------------------------------------------------------------------------------
-ifeq ($(strip $(DEVKITARM)),)
-$(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM)
-endif
-
--include $(DEVKITARM)/ds_rules
+export BLOCKSDS			?= /opt/blocksds/core
+export WONDERFUL_TOOLCHAIN	?= /opt/wonderful
+ARM_NONE_EABI_PATH	?= $(WONDERFUL_TOOLCHAIN)/toolchain/gcc-arm-none-eabi/bin/
 
 #---------------------------------------------------------------------------------
 # BUILD is the directory where object files & intermediate files will be placed
@@ -16,7 +14,7 @@ TARGET		:=	load
 BUILD		?=	build
 SOURCES		:=	source source/patches 
 INCLUDES	:=	build
-SPECS		:=  specs
+SPECS		:= $(BLOCKSDS)/sys/crts/ds_arm7.specs
  
 #---------------------------------------------------------------------------------
 # options for code generation
@@ -30,8 +28,8 @@ CFLAGS	:=	-g -Wall -Os\
 
 CFLAGS	+=	$(INCLUDE) $(EXTRA_CFLAGS) -DARM7
 
-ASFLAGS	:=	-g $(ARCH) $(EXTRA_CFLAGS) $(INCLUDE)
-LDFLAGS	=	-nostartfiles -T $(TOPDIR)/load.ld -Wl,--no-warn-rwx-segments -g $(ARCH) -Wl,-Map,$(TARGET).map
+ASFLAGS	:=	-g $(ARCH) $(EXTRA_CFLAGS) $(INCLUDE) -specs=$(SPECS)
+LDFLAGS	=	-nostartfiles -T $(TOPDIR)/load.ld -Wl,--no-warn-rwx-segments -g $(ARCH) -Wl,-Map,$(TARGET).map -specs=$(SPECS)
 
 LIBS	:= 
 
@@ -39,7 +37,7 @@ LIBS	:=
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:=	$(LIBNDS)
+LIBDIRS	:=	$(BLOCKSDS)/libs/libnds
  
   
 #---------------------------------------------------------------------------------
@@ -56,6 +54,7 @@ export DEPSDIR	:=	$(CURDIR)/$(BUILD)
 
 export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
  
+export PREFIX	:=	$(ARM_NONE_EABI_PATH)arm-none-eabi-
 export CC		:=	$(PREFIX)gcc
 export CXX		:=	$(PREFIX)g++
 export AR		:=	$(PREFIX)ar
@@ -84,7 +83,7 @@ export LD	:=	$(CC)
 #---------------------------------------------------------------------------------
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
-	@$(MAKE) -C $(BUILD) -f $(CURDIR)/Makefile 
+	@$(MAKE) -C $(BUILD) -f $(CURDIR)/Makefile --no-print-directory
  
 #---------------------------------------------------------------------------------
 clean:
