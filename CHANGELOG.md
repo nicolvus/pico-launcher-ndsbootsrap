@@ -2,15 +2,15 @@
 
 ## [Unreleased]
 
-### Added
-- Dual loader backend support for nds-bootstrap
-  - New `loaderBackend` configuration option (auto/legacy/bootstrap)
-  - Support for both `/_pico/load.bin` (legacy) and `/_nds/nds-bootstrap.nds` (new) paths
-  - Automatic fallback between backends based on file availability
-  - Optional path overrides via `legacyLoaderPath` and `bootstrapLoaderPath` settings
-  - Detailed debug logging for backend resolution and fallback behavior
-  - Clear error messages showing exact required paths when no loader is found
-  - Full backward compatibility with existing `/_pico/load.bin` installations
+### Changed
+- nds-bootstrap launcher now extracts the loader directly from `/_nds/nds-bootstrap-release.nds`
+- Removed dependency on external `load.bin` file
+- Removed loader backend configuration options (`loaderBackend`, `legacyLoaderPath`, `bootstrapLoaderPath`)
+- Simplified volume detection to use `/_nds/nds-bootstrap-release.nds` as reference
+
+### Removed
+- Support for `/_pico/load.bin` and `/_nds/nds-bootstrap.nds` as separate loader binaries
+- Loader backend resolution system
 
 ## [v1.2.0] - 29 Mar 2026
 
