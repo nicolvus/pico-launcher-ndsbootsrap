@@ -7,6 +7,7 @@ This repository contains Pico Launcher, which is a front-end for [Pico Loader](h
 
 ## Features
 - Can load homebrew and retail games using [Pico Loader](https://github.com/LNH-team/pico-loader).
+- Dual loader backend support for nds-bootstrap with automatic fallback (see [Loader Backend](docs/LoaderBackend.md))
 - Various display modes
     - Horizontal and vertical icon grid
     - Banner list
