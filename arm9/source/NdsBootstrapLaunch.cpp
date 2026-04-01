@@ -16,6 +16,8 @@ namespace
 static constexpr const char* kNdsBootstrapExe = "/_nds/nds-bootstrap-release.nds";
 static constexpr const char* kBootstrapIniPath = "/_nds/nds-bootstrap.ini";
 static constexpr const char* kQuitPath = "/_pico/LAUNCHER.nds";
+static constexpr const char* kExternalLoaderSdPath = "sd:/_pico/load.bin";
+static constexpr const char* kExternalLoaderFatPath = "fat:/_pico/load.bin";
 static constexpr u32 kMaxLoaderBinBytes = 65536;
 
 alignas(32) static u8 sLoaderBin[kMaxLoaderBinBytes];
@@ -352,7 +354,7 @@ bool TryLaunchNdsBootstrap(NdsBootstrapLogFn logFn)
 
     if (IsExternalLoaderEnabled())
     {
-        const char* externalCandidates[] = { "sd:/_pico/load.bin", "fat:/_pico/load.bin" };
+        const char* externalCandidates[] = { kExternalLoaderSdPath, kExternalLoaderFatPath };
         for (u32 i = 0; i < 2; ++i)
         {
             const char* externalPath = externalCandidates[i];
