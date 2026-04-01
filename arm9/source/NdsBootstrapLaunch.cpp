@@ -5,6 +5,7 @@
 #include "core/StringUtil.h"
 #include "NdsBootstrapLaunch.h"
 #include "NdsBootstrapLaunchParams.h"
+#include "loader_backend.h"
 #include "core/Environment.h"
 #include "fat/ff.h"
 #include "fat/File.h"
@@ -12,7 +13,6 @@
 
 namespace
 {
-static constexpr const char* kLoadBinPath = "/_pico/load.bin";
 static constexpr const char* kNdsBootstrapExe = "/_nds/nds-bootstrap-release.nds";
 static constexpr const char* kBootstrapIniPath = "/_nds/nds-bootstrap.ini";
 static constexpr const char* kQuitPath = "/_pico/LAUNCHER.nds";
@@ -41,9 +41,12 @@ static const char* DetectVolumePrefix()
     FILINFO finfo;
     memset(&finfo, 0, sizeof(finfo));
 
-    if (f_stat("sd:/_pico/load.bin", &finfo) == FR_OK)
+    // Check for either loader binary to identify the active boot drive.
+    if (f_stat("sd:/_pico/load.bin", &finfo) == FR_OK
+        || f_stat("sd:/_nds/nds-bootstrap.nds", &finfo) == FR_OK)
         return "sd:/";
-    if (f_stat("fat:/_pico/load.bin", &finfo) == FR_OK)
+    if (f_stat("fat:/_pico/load.bin", &finfo) == FR_OK
+        || f_stat("fat:/_nds/nds-bootstrap.nds", &finfo) == FR_OK)
         return "fat:/";
     if (f_stat("sd:/", &finfo) == FR_OK)
         return "sd:/";
@@ -218,7 +221,6 @@ bool TryLaunchNdsBootstrap(NdsBootstrapLogFn logFn)
 
     BuildAbsolutePath(romPath, volumePrefix, romPathAbs, sizeof(romPathAbs));
     BuildAbsolutePath(kNdsBootstrapExe, volumePrefix, ndsBootstrapExePath, sizeof(ndsBootstrapExePath));
-    BuildAbsolutePath(kLoadBinPath, volumePrefix, loadBinPath, sizeof(loadBinPath));
     BuildAbsolutePath("/_nds/nds-bootstrap", volumePrefix, ndsBootstrapDirPath, sizeof(ndsBootstrapDirPath));
 
     {
@@ -243,35 +245,53 @@ bool TryLaunchNdsBootstrap(NdsBootstrapLogFn logFn)
         return false;
     }
 
-    EmitLog(logFn, "Loading /_pico/load.bin");
+    // Resolve the loader binary path using the configured backend policy.
+    EmitLog(logFn, "Resolving loader binary path");
+    bool loaderUsedFallback = false;
+    if (!ResolveLoaderBinPath(
+            GetNdsBootstrapLoaderBackend(),
+            GetNdsBootstrapLegacyLoaderPath(),
+            GetNdsBootstrapBootstrapLoaderPath(),
+            volumePrefix,
+            loadBinPath, sizeof(loadBinPath),
+            loaderUsedFallback,
+            logFn))
+    {
+        // ResolveLoaderBinPath already logged the error with both required paths.
+        return false;
+    }
+    if (loaderUsedFallback)
+        EmitLog(logFn, "Note: loader fallback path was used");
 
     File loadBin;
     if (loadBin.Open(loadBinPath, FA_OPEN_EXISTING | FA_READ) != FR_OK)
     {
-        EmitLog(logFn, "load.bin not found");
-        LOG_FATAL(
-            "Chishm loader not found at %s — copy load.bin from nds-bootloader build (devkitARM) here.\n",
-            loadBinPath);
+        char msg[128];
+        snprintf(msg, sizeof(msg), "Cannot open loader binary: %.96s", loadBinPath);
+        EmitLog(logFn, msg);
+        LOG_FATAL("Cannot open loader binary %s\n", loadBinPath);
         return false;
     }
     u32 loadSize = (u32)loadBin.GetSize();
     if (loadSize == 0 || loadSize > kMaxLoaderBinBytes)
     {
-        EmitLog(logFn, "Invalid load.bin size");
-        LOG_FATAL("Invalid %s size %u\n", loadBinPath, loadSize);
+        char msg[80];
+        snprintf(msg, sizeof(msg), "Invalid loader binary size: %lu", (unsigned long)loadSize);
+        EmitLog(logFn, msg);
+        LOG_FATAL("Invalid loader binary size %u in %s\n", loadSize, loadBinPath);
         return false;
     }
     u32 br = 0;
     if (loadBin.Read(sLoaderBin, loadSize, br) != FR_OK || br != loadSize)
     {
-        EmitLog(logFn, "Failed reading load.bin");
-        LOG_FATAL("Failed to read %s\n", loadBinPath);
+        EmitLog(logFn, "Failed reading loader binary");
+        LOG_FATAL("Failed to read loader binary %s\n", loadBinPath);
         return false;
     }
 
     {
         char msg[64];
-        snprintf(msg, sizeof(msg), "load.bin bytes: %lu", (unsigned long)loadSize);
+        snprintf(msg, sizeof(msg), "Loader binary bytes: %lu", (unsigned long)loadSize);
         EmitLog(logFn, msg);
     }
 

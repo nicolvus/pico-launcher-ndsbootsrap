@@ -199,6 +199,9 @@ void RomBrowserController::HandleLaunchTrigger()
             && _appSettingsService->GetAppSettings().ndsLoaderKind == NdsLoaderKind::NdsBootstrap)
         {
             SetNdsBootstrapLaunchRomPath(_navigatePath);
+            SetNdsBootstrapLoaderBackend(_appSettingsService->GetAppSettings().loaderBackend);
+            SetNdsBootstrapLegacyLoaderPath(_appSettingsService->GetAppSettings().legacyLoaderPath.GetString());
+            SetNdsBootstrapBootstrapLoaderPath(_appSettingsService->GetAppSettings().bootstrapLoaderPath.GetString());
             gProcessManager.Goto<NdsBootstrapProcess>();
             return TaskResult<void>::Completed();
         }
