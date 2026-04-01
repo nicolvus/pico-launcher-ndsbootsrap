@@ -44,6 +44,8 @@ out/
 ehthumbs.db
 Thumbs.db
 *.nds
+!build lista/
+!build lista/launcher.nds
 *.elf
 *.a
 .vscode/
