@@ -1,0 +1,26 @@
+#include "common.h"
+#include "core/task/TaskQueue.h"
+#include "FileInfoManager.h"
+#include "FileRecyclerAdapter.h"
+
+u32 FileRecyclerAdapter::GetItemCount() const
+{
+    return _fileInfoManager->GetItemCount();
+}
+
+void FileRecyclerAdapter::BindView(View* view, int index) const
+{
+    LOG_DEBUG("Binding %d\n", index);
+    _taskQueue->Enqueue([=, this] (const vu8& cancelRequested)
+    {
+        LOG_DEBUG("Started task to load %d\n", index);
+        _fileInfoManager->LoadFileInfo(index);
+        auto internalFileInfo = _fileInfoManager->GetInternalFileInfo(index);
+        if (cancelRequested)
+        {
+            _fileInfoManager->ReleaseFileInfo(index);
+            return TaskResult<void>::Canceled();
+        }
+        return BindView(view, index, internalFileInfo, cancelRequested);
+    });
+}

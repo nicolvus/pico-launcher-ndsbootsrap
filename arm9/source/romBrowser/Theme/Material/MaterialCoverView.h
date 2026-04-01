@@ -1,0 +1,54 @@
+#pragma once
+#include <memory>
+#include "core/SharedPtr.h"
+#include "gui/views/View.h"
+#include "romBrowser/FileType/FileCover.h"
+#include "gui/VBlankTextureLoader.h"
+
+class MaterialCoverView : public View
+{
+public:
+    explicit MaterialCoverView(VBlankTextureLoader* vblankTextureLoader)
+        : _vblankTextureLoader(vblankTextureLoader) { }
+
+    ~MaterialCoverView() override
+    {
+        _vblankTextureLoader->CancelLoad(_textureLoadRequest);
+    }
+
+    void InitVram(const VramContext& vramContext) override;
+
+    void Draw(GraphicsContext& graphicsContext) override;
+
+    Rectangle GetBounds() const override
+    {
+        return Rectangle(_position.x - (COVER_WIDTH / 2), _position.y - (COVER_HEIGHT / 2), COVER_WIDTH, COVER_HEIGHT);
+    }
+
+    void SetCover(SharedPtr<FileCover> cover)
+    {
+        if (_cover.IsValid())
+        {
+            _vblankTextureLoader->CancelLoad(_textureLoadRequest);
+        }
+        _cover = std::move(cover);
+    }
+
+    void ClearCover()
+    {
+        if (_cover.IsValid())
+        {
+            _vblankTextureLoader->CancelLoad(_textureLoadRequest);
+        }
+        _cover.Reset();
+    }
+
+    void UploadCoverGraphics();
+
+private:
+    VBlankTextureLoader* _vblankTextureLoader;
+    SharedPtr<FileCover> _cover;
+    VBlankTextureLoadRequest _textureLoadRequest;
+    u32 _texVramOffset = 0;
+    u32 _plttVramOffset = 0;
+};

@@ -1,0 +1,47 @@
+#include "common.h"
+#include <algorithm>
+#include "material/scheme/scheme.h"
+#include "MaterialColorSchemeFactory.h"
+
+using Rgb888 = Rgb<8, 8, 8>;
+
+static material_color_utilities::Argb Rgb888ToMaterialArgb(const Rgb888& color)
+{
+    return material_color_utilities::ArgbFromRgb(color.r, color.g, color.b);
+}
+
+static Rgb888 MaterialArgbToRgb888(material_color_utilities::Argb color)
+{
+    return Rgb888(
+        material_color_utilities::RedFromInt(color),
+        material_color_utilities::GreenFromInt(color),
+        material_color_utilities::BlueFromInt(color));
+}
+
+void MaterialColorSchemeFactory::FromPrimaryColor(const Rgb<8, 8, 8>& primaryColor,
+    bool darkTheme, MaterialColorScheme& materialColorScheme)
+{
+    auto materialPrimaryColor = Rgb888ToMaterialArgb(primaryColor);
+    auto corePalette = material_color_utilities::CorePalette::Of(materialPrimaryColor);
+    auto scheme = darkTheme
+        ? material_color_utilities::MaterialDarkColorSchemeFromPalette(corePalette)
+        : material_color_utilities::MaterialLightColorSchemeFromPalette(corePalette);
+
+    materialColorScheme.primary = MaterialArgbToRgb888(scheme.primary);
+    materialColorScheme.onPrimary = MaterialArgbToRgb888(scheme.on_primary);
+    materialColorScheme.secondaryContainer = MaterialArgbToRgb888(scheme.secondary_container);
+    materialColorScheme.onSecondaryContainer = MaterialArgbToRgb888(scheme.on_secondary_container);
+    materialColorScheme.tertiary = MaterialArgbToRgb888(scheme.tertiary);
+    materialColorScheme.onTertiary = MaterialArgbToRgb888(scheme.on_tertiary);
+    materialColorScheme.tertiaryContainer = MaterialArgbToRgb888(scheme.tertiary_container);
+    materialColorScheme.onTertiaryContainer = MaterialArgbToRgb888(scheme.on_tertiary_container);
+    materialColorScheme.inverseOnSurface = MaterialArgbToRgb888(darkTheme ? corePalette.neutral().get(10.0) : scheme.inverse_on_surface);
+    materialColorScheme.onSurface = MaterialArgbToRgb888(scheme.on_surface);
+    materialColorScheme.onSurfaceVariant = MaterialArgbToRgb888(scheme.on_surface_variant);
+    materialColorScheme.surfaceBright = MaterialArgbToRgb888(corePalette.neutral().get(darkTheme ? 24.0 : 98.0));
+    materialColorScheme.mainIconBg = MaterialArgbToRgb888(corePalette.secondary().get(darkTheme ? 42.0 : 78.0));
+    // materialColorScheme.surfaceContainerLow = MaterialArgbToRgb888(corePalette.neutral().get(darkTheme ? 10.0 : 96.0));
+    materialColorScheme.surfaceContainerHighest = MaterialArgbToRgb888(corePalette.neutral().get(darkTheme ? 22.0 : 90.0));
+    materialColorScheme.scrim = MaterialArgbToRgb888(corePalette.neutral().get(darkTheme ? 70.0 : 30.0));
+    materialColorScheme.outline = MaterialArgbToRgb888(scheme.outline);
+}

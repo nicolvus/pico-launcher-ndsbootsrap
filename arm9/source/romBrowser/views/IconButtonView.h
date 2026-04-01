@@ -1,0 +1,69 @@
+#pragma once
+#include "gui/views/View.h"
+#include "gui/materialDesign.h"
+
+class MaterialColorScheme;
+class IVramManager;
+
+class IconButtonView : public View
+{
+public:
+    typedef void (*button_action_t)(IconButtonView* sender, void* arg);
+
+    enum class Type
+    {
+        Standard,
+        Filled,
+        Tonal
+    };
+
+    enum class State
+    {
+        NoToggle,
+        ToggleUnselected,
+        ToggleSelected
+    };
+
+    IconButtonView()
+        : _iconVramOffset(0), _action(nullptr), _actionArg(nullptr)
+        , _type(Type::Standard), _state(State::NoToggle) { }
+
+    IconButtonView(Type type, State state,
+        md::sys::color backgroundColor, const MaterialColorScheme* materialColorScheme)
+        : _iconVramOffset(0), _backgroundColor(backgroundColor)
+        , _action(nullptr), _actionArg(nullptr), _type(type), _state(state)
+        , _materialColorScheme(materialColorScheme) { }
+
+    void SetIconVramOffset(u32 vramOffset) { _iconVramOffset = vramOffset; }
+
+    Rectangle GetBounds() const override
+    {
+        return Rectangle(_position, 32, 32);
+    }
+
+    void SetAction(button_action_t action, void* arg)
+    {
+        _action = action;
+        _actionArg = arg;
+    }
+
+    void SetState(State state)
+    {
+        _state = state;
+    }
+
+    bool HandleInput(const InputProvider& inputProvider, FocusManager& focusManager) override;
+
+protected:
+    u32 _iconVramOffset;
+    md::sys::color _backgroundColor;
+    button_action_t _action;
+    void* _actionArg;
+    Type _type;
+    State _state;
+    const MaterialColorScheme* _materialColorScheme;
+
+    bool IsCircleBackgroundVisible() const;
+    md::sys::color GetCircleBackgroundColor() const;
+    md::sys::color GetForegroundColor() const;
+};
